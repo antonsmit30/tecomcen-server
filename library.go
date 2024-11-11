@@ -1,6 +1,9 @@
 package main
 
-import "net"
+import (
+	"fmt"
+	"net"
+)
 
 type Connection struct {
 	connection net.Conn
@@ -9,8 +12,9 @@ type Connection struct {
 }
 
 type Room struct {
-	name  string
-	users []Connection
+	name     string
+	users    []Connection
+	messages chan string
 }
 
 // methods
@@ -18,6 +22,7 @@ type Room struct {
 // joins a room
 func (r *Room) joinRoom(c *Connection) {
 
+	fmt.Println("Joining room")
 	r.users = append(r.users, *c)
 
 }
