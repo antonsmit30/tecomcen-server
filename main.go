@@ -163,7 +163,10 @@ func logic(c Connection, r *[]Room, cb chan (string), bu chan (string)) {
 			// cb <- cb_msg
 			for i := 0; i < len((*r)[0].users); i++ {
 
-				go writeToClient(&(*r)[0].users[i], cb_msg, &c.name)
+				// here...we only want to broadcast the message to other users except
+				if (*r)[0].users[i].id != c.id {
+					go writeToClient(&(*r)[0].users[i], cb_msg, &c.name)
+				}
 
 			}
 
@@ -173,7 +176,9 @@ func logic(c Connection, r *[]Room, cb chan (string), bu chan (string)) {
 			// bu <- bu_msg
 			for i := 0; i < len((*r)[1].users); i++ {
 
-				go writeToClient(&(*r)[1].users[i], bu_msg, &c.name)
+				if (*r)[1].users[i].id != c.id {
+					go writeToClient(&(*r)[1].users[i], bu_msg, &c.name)
+				}
 
 			}
 
