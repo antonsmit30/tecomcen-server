@@ -18,7 +18,9 @@ func main() {
 		Room{name: "coolblue", messages: make(chan string)},
 		Room{name: "bottleup", messages: make(chan string)},
 	}
-	messages := make(chan (string))
+	cb_ch := make(chan (string), 10)
+	bu_ch := make(chan (string), 10)
+	// done := make(chan (bool), 10)
 
 	fmt.Println("Listening on TCP 5000")
 
@@ -50,21 +52,53 @@ func main() {
 		space[u] = &c
 		fmt.Println(space)
 
-		go logic(*space[u], &rooms, messages)
+		go logic(*space[u], &rooms, cb_ch, bu_ch)
+
+		// select {
+		// case <-cb_ch:
+		// 	fmt.Println("Top level cb channel msg received. send to entire room")
+		// 	for i := 0; i < len(rooms[0].users); i++ {
+
+		// 		go writeToClient(&rooms[0].users[i], <-cb_ch, done)
+
+		// 	}
+
+		// case <-bu_ch:
+		// 	fmt.Println("top level bu channel msg received. we should send to entire room")
+		// 	for i := 0; i < len(rooms[1].users); i++ {
+
+		// 		go writeToClient(&rooms[1].users[i], <-bu_ch, done)
+
+		// 	}
+		// default:
+		// 	fmt.Println("Default")
+		// }
+
+		// Maybe...our rooms, should message the users over here?
 
 	}
 
 }
 
-// This will probably be the main connection handler with the users I think
-func logic(c Connection, r *[]Room, messages chan string) {
+// This will probably be the main connection handler with the user I think
+func logic(c Connection, r *[]Room, cb chan (string), bu chan (string)) {
+
+	local_channel := make(chan (string))
+
 	// finally close the connection once the handle connection is done
-	defer c.connection.Close()
+	// defer c.connection.Close()
 
 	// ask for room to join
 	//first things first, lets possibly let the user know its uuid
 	sendBackToClient(c.connection, "your uuid: "+c.id+"\n")
 	fmt.Println(*r)
+	sendBackToClient(c.connection, "type your username for chat: ")
+	username, err := bufio.NewReader(c.connection).ReadString('\n')
+	if err != nil {
+		fmt.Printf("Error: %v", err)
+		return
+	}
+	c.name = username
 
 	// So here, i think we should ask the user to join a room...lets have 2 rooms for now
 	for i := 0; i < len(*r); i++ {
@@ -83,7 +117,7 @@ func logic(c Connection, r *[]Room, messages chan string) {
 	}
 
 	// check if user wants to join a room
-	if input == "room=1\n" {
+	if input == "1\n" {
 		sendBackToClient(c.connection, ">joining room 1\n>")
 		c.room = "coolblue"
 		(*r)[0].joinRoom(&c)
@@ -98,25 +132,48 @@ func logic(c Connection, r *[]Room, messages chan string) {
 		for i := 0; i < len(*r); i++ {
 
 			if (*r)[i].name == c.room {
+				// fmt.Println("go readingfromclient")
 
-				go readFromClient(&c, &(*r)[i])
+				go readFromClient(&c, &(*r)[i], local_channel)
 				// select {
 
-				msg := <-(*r)[i].messages
+				// msg := <-(*r)[i].messages
 				// broadcast the message to each user :p
 				// TODO: optimize this shit
-				for j := 0; j < len((*r)[i].users); j++ {
+				// for j := 0; j < len((*r)[i].users); j++ {
 
-					if (*r)[i].users[j].id != c.id {
-						fmt.Printf("writing to user: %v", msg)
-						if _, err := io.WriteString(c.connection, msg); err != nil {
-							fmt.Printf("Error: %v", err)
-						}
-					}
-
-				}
+				// 	if (*r)[i].users[j].id != c.id {
+				// 		fmt.Printf("writing to user: %v", msg)
+				// 		go writeToClient(&c, msg)
+				// 	}
 
 				// }
+
+				// }
+
+			}
+
+		}
+
+		select {
+		// case cb_msg := <-(*r)[0].messages:
+		case cb_msg := <-local_channel:
+			fmt.Printf("cb message received")
+			fmt.Printf("the message received: %v", cb_msg)
+			// cb <- cb_msg
+			for i := 0; i < len((*r)[0].users); i++ {
+
+				go writeToClient(&(*r)[0].users[i], cb_msg, &c.name)
+
+			}
+
+		case bu_msg := <-(*r)[1].messages:
+			fmt.Printf("bu message received")
+			fmt.Printf("the message received: %v", bu_msg)
+			// bu <- bu_msg
+			for i := 0; i < len((*r)[1].users); i++ {
+
+				go writeToClient(&(*r)[1].users[i], bu_msg, &c.name)
 
 			}
 
@@ -129,21 +186,44 @@ func logic(c Connection, r *[]Room, messages chan string) {
 
 }
 
-func readFromClient(c *Connection, r *Room) {
+func readFromClient(c *Connection, r *Room, ch chan (string)) {
 	// read input from client and do something i dont know what yet
+	// defer c.connection.Close()
 	for {
-		fmt.Println("reading from user")
-		input, err := bufio.NewReader(c.connection).ReadString('\n')
-		if err != nil {
-			fmt.Printf("Error: %v", err)
-			break
+
+		// fmt.Println("reading from user")
+		nr := bufio.NewReader(c.connection)
+
+		s := bufio.NewScanner(nr)
+		for s.Scan() {
+			// r.messages <- s.Text()
+			ch <- s.Text()
 		}
-		fmt.Println("sending to channel")
-		r.messages <- input
+		// input := s.Text()
+		// if len(input) > 0 {
+		// 	fmt.Printf("input: %v", input)
+		// 	r.messages <- input
+		// }
+		// fmt.Printf("input %v", len(input))
+
+		// if err != nil {
+		// 	fmt.Printf("Error: %v", err)
+		// 	break
+		// }
+		// fmt.Println("read from user")
+		// fmt.Println("sending to channel")
 
 		// fmt.Println(input)
 	}
 
+}
+
+func writeToClient(c *Connection, msg string, id *string) {
+	// Write to our client
+	if _, err := io.WriteString(c.connection, "-"+*id+">"+msg+">\n>"); err != nil {
+		fmt.Printf("Error: %v", err)
+	}
+	// done <- true
 }
 
 // func readFromClient(c *Connection, r *[]Room) {

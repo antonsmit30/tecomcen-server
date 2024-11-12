@@ -9,6 +9,7 @@ type Connection struct {
 	connection net.Conn
 	id         string
 	room       string
+	name       string
 }
 
 type Room struct {
